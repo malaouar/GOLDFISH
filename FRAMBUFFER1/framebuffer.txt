@@ -1,0 +1,41 @@
+Goldfish framebuffer:
+=====================
+Frame buffer base adress: 0xFF014000
+
+I/O Registers:
+	0x00 GET_WIDTH R: Read framebuffer width in pixels.
+	0x04 GET_HEIGHT R: Read framebuffer height in pixels.
+	0x08 INT_STATUS
+	0x0c INT_ENABLE
+	0x10 SET_BASE
+	0x14 SET_ROTATION
+	0x18 SET_BLANK W: Set 'blank' flag.
+	0x1c GET_PHYS_WIDTH R: Read framebuffer width in millimeters.
+	0x20 GET_PHYS_HEIGHT R: Read framebuffer height in millimeters.
+	0x24 GET_FORMAT R: Read framebuffer pixel format.
+
+The framebuffer memory is allocated by the kernel, which will send its physical address to the device by using IO_WRITE(SET_BASE, <address>).
+
+On boot, the kernel will read various properties of the framebuffer:
+IO_READ(GET_WIDTH) and IO_READ(GET_HEIGHT) return the width and height of the framebuffer in pixels. Note that a 'row' corresponds to consecutive bytes in memory.
+IO_READ(GET_PHYS_WIDTH) and IO_READ(GET_PHYS_HEIGHT) return the emulated physical width and height in millimeters.
+IO_READ(GET_FORMAT) returns a value matching the format of pixels in the framebuffer: 
+	0x01 BRGA_8888
+	0x02 RGBX_8888
+	0x03 RGB_888
+	0x04 RGB_565
+	0x05 BGRA_8888
+	0x06 RGBA_5551
+	0x08 RGBA_4444
+
+HOWEVER, the kernel driver only expects a value of HAL_PIXEL_FORMAT_RGB_565at the moment. so the virtual device should always return the value 0x04.
+Rows are not padded, so the size in bytes of a single framebuffer will always be exactly 'width * heigth * 2'.
+
+The device uses a single IRQ to notify the kernel of several events. When it is raised, the kernel IRQ handler must IO_READ(INT_STATUS), which will return a value containing the following bit flags:
+
+bit 0: Set to 1 to indicate a VSYNC event.
+bit 1: Set to 1 to indicate that the content of a previous SET_BASE has been properly displayed.
+
+Note that reading this register also lowers the device's IRQ level. The second flag is essentially a way to notify the kernel that an IO_WRITE(SET_BASE, <address>) operation has been succesfully processed by the emulator, i.e. that the new content has been displayed to the user.
+The kernel can control which flags should raise an IRQ by using IO_WRITE(INT_ENABLE, <flags>), where <flags> has the same format as the result of IO_READ(INT_STATUS). If the corresponding bit is 0, the an IRQ for the corresponding event will never be generated.
+

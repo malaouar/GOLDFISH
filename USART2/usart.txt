@@ -1,0 +1,81 @@
+Goldfish serial ports (tty):
+===========================
+Relevant files:
+$QEMU/hw/android/goldfish/tty.c
+$KERNEL/drivers/char/goldfish_tty.c
+$KERNEL/arch/arm/mach-goldfish/include/debug-macro.S
+Device properties:
+Name: goldfish_tty
+Id: 0 to N
+IrqCount:
+
+I/O Registers:
+--------------
+	0x00 PUT_CHAR W: Write a single 8-bit value to the serial port.
+	0x04 BYTES_READY R: Read the number of available buffered input bytes.
+	0x08 CMD W: Send command (see below).
+	0x10 DATA_PTR W: Write kernel buffer address.
+	0x14 DATA_LEN W: Write kernel buffer size.
+
+Each instance implements a virtual serial port that contains a small internal buffer where incoming data is stored until the kernel fetches it.
+The CMD I/O register is used to send various commands to the device, identified by the following values:
+
+	0x00 CMD_INT_DISABLE Disable device.
+	0x01 CMD_INT_ENABLE Enable device.
+	0x02 CMD_WRITE_BUFFER Write buffer from kernel to device.
+	0x03 CMD_READ_BUFFER Read buffer from device to kernel.
+
+Each device instance uses one IRQ that is raised to indicate that there is incoming/buffered data to read. To read such data, the kernel should do the following:
+
+	len = IO_READ(PUT_CHAR); // Read length of incoming data.
+	if (len == 0) return; // Nothing to do.
+	available = get_buffer(len, &buffer); // Get address of buffer and its size.
+	IO_WRITE(DATA_PTR, buffer); // Write buffer address to device.
+	IO_WRITE(DATA_LEN, available); // Write buffer length to device.
+	IO_WRITE(CMD, CMD_READ_BUFFER); // Read the data into kernel buffer.
+
+After reading data the buffer is flushed automaticaly.
+
+The device will automatically lower its IRQ when there is no more input data in its buffer. However, the kernel can also temporarily disable device interrupts with CMD_INT_DISABLE / CMD_INT_ENABLE.
+Note that disabling interrupts does not flush the buffer, nor prevent it from buffering further data from external inputs.
+To write to the serial port, the device can either send a single byte at a time with:
+
+	IO_WRITE(PUT_CHAR, <value>) // Send the lower 8 bits of <value>.
+	Or use the mode efficient sequence:
+	#if 64BIT_GUEST_CPU
+	IO_WRITE(DATA_PTR_HIGH, buffer >> 32)
+	#endif
+	IO_WRITE(DATA_PTR, buffer)
+	IO_WRITE(DATA_LEN, buffer_len)
+	IO_WRITE(CMD, CMD_WRITE_BUFFER)
+
+The former is less efficient but simpler, and is typically used by the kernel to send debug messages only.
+Note that the Android emulator always reserves the first two virtual serial ports:
+- The first one is used to receive kernel messages, this is done by adding the 'console=ttyS0' parameter to the kernel command line in $QEMU/vl-android.c
+- The second one is used to setup the legacy "qemud" channel, used on older Android platform revisions. This is done by adding 'android.qemud=ttyS1' on the kernel command line in $QEMU/vl-android.c
+Read docs/ANDROID-QEMUD.TXT for more details about the data that passes through this serial port. In a nutshell, this is required to emulate older Android releases (e.g. cupcake). It provides a direct communication channel
+between the guest system and the emulator.
+More recent Android platforms do not use QEMUD anymore, but instead rely on the much faster "QEMU pipe" device, described later in this document as well as in docs/ANDROID-QEMU-PIPE.TXT.
+
+
+//=============== USART2 BASE AND REGS ==========
+#define tty2_base  0xFF012000
+#define PUT_CHAR  0x00
+#define BYTES_READY  0x04
+#define CMD  0x08
+#define DATA_PTR 0x10
+#define DATA_LEN  0x14
+
+//=================  USART COMMANDS ==============
+#define CMD_INT_DISABLE	0x00
+#define CMD_INT_ENABLE	0x01
+#define CMD_WRITE_BUFFER	0x02
+#define CMD_READ_BUFFER	0x03
+
+
+////=============== USART2 IRQ Number ==========
+#define IRQ_TTY2		(12)
+
+In the goldfish platform, serial ports 0 and 1 are used by the Android emulator itself. When we start the emulator with the command-line option –shell, serial port 2 can be used as standard input/output.
+Before we try to retrieve data from a serial port, we usually check the available data first. Once we find there is data in the serial port, we can use two functions to retrieve data from the data buffer. We can get a data stream using the function uart2_gets(), or we can get a single character using uart2_getc(). To send a character to a serial port, we can use uart2_putc().
+

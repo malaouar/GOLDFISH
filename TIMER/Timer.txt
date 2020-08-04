@@ -1,0 +1,100 @@
+Godlfish timer:
+==============
+Relevant files:
+$QEMU/hw/android/goldfish/timer.c
+$KERNEL/arch/arm/mach-goldfish/timer.c
+$KERNEL/arch/mips/goldfish/goldfish-time.c
+Device properties:
+Name: goldfish_timer
+Id: -1
+IrqCount: 1
+
+32-bit I/O registers (offset, name, abstract):
+
+		0x00 TIME_LOW R: Get current time, then return low-order 32-bits.
+		0x04 TIME_HIGH R: Return high 32-bits from previous TIME_LOW read.
+		0x08 ALARM_LOW W: Set low 32-bit value of alarm, then arm it.
+		0x0c ALARM_HIGH W: Set high 32-bit value of alarm.
+		0x10 CLEAR_INTERRUPT W: Lower device's irq level.
+		0x14 CLEAR_ALARM
+
+This device is used to return the current host time to the kernel, as a high-precision signed 64-bit nanoseconds value, starting from a liberal point in time. This value should correspond to the QEMU "vm_clock", i.e. it should
+not be updated when the emulated system does _not_ run, and hence cannot be based directly on a host clock.
+
+To read the value, the kernel must perform an IO_READ(TIME_LOW), which returns an unsigned 32-bit value, before an IO_READ(TIME_HIGH), which returns a signed 32-bit value, corresponding to the higher half of the full value.
+
+The device can also be used to program an alarm, with something like:
+	IO_WRITE(ALARM_HIGH, <high-value>) // Must happen first.
+	IO_WRITE(ALARM_LOW, <low-value>) // Must happen second.
+
+When the corresponding value is reached, the device will raise its IRQ. Note that the IRQ is raised as soon as the second IO_WRITE() if the alarm value is already older than the current time.
+
+IO_WRITE(CLEAR_INTERRUPT, <any>) can be used to lower the IRQ level once the alarm has been handled by the kernel.
+IO_WRITE(CLEAR_ALARM, <any>) can be used to disarm an existing alarm, if any.
+
+Note: At the moment, the alarm is only used on ARM-based system. MIPS based systems only use TIME_LOW / TIME_HIGH on this device.
+============================
+The combination of the two 32-bit read-only registers, TIME_LOW and TIME_HIGH, provides a 64-bit counter. The value of this 64-bit counter is used as a system tick. The combination of another two 32-bit write-only registers, ALARM_LOW and ALARM_HIGH, is used to set the timestamp of the timer interrupt. When the system tick reaches this preset timestamp, a timer interrupt is triggered. In the timer interrupt handler, the write-only register CLEAR_INTERRUPT or CLEAR_ALARM can be used to clear the timer interrupt.
+
+=============================================
+#define TIMER_BASE     (0xff000000 + 0x3000)
+
+#define IRQ_TIMER       (3)
+
+/* Refer to arch/arm/mach-goldfish/include/mach/timer.h */
+enum {
+	TIME_LOW          = 0x00,
+	TIME_HIGH         = 0x04,
+	ALARM_LOW         = 0x08,
+	ALARM_HIGH        = 0x0c,
+	CLEAR_INTERRUPT   = 0x10,
+	CLEAR_ALARM       = 0x14,
+};
+
+//======== Goldfish specific Timer functions ==============
+
+/* set_timer() sets the timer interrupt to a number of milliseconds. The parameter cycles is in milliseconds. The
+function reads the current timestamp and adds a timeout value. After that, it sets an alarm register.  */
+
+void set_timer(unsigned long cycles){
+	unsigned long lo, hi, tmp;
+
+	lo = *((void *)TIMER_BASE + TIME_LOW);
+	hi = (int64_t)*((void *)TIMER_BASE + TIME_HIGH);
+
+	hi = hi + cycles / 4096; /* Move 12 bits left. */
+	tmp = lo + ((cycles % 4096) << 20);
+	if(lo > tmp) {
+		lo = tmp;
+		hi = hi + 1;
+	}
+	else {
+		lo = tmp;
+	}
+
+	*((void *)TIMER_BASE + ALARM_HIGH) = hi;
+	*((void *)TIMER_BASE + ALARM_LOW) = lo;
+}
+
+//=======================================
+/*  Both clear_timer_int() and clear_alarm() can be used to clear the timer interrupt. */
+void clear_timer_int(void){
+	*((void *)TIMER_BASE + CLEAR_INTERRUPT) = 1;  // any value  (here 1)
+}
+
+//=====================================
+void clear_alarm(void){
+	*((void *)TIMER_BASE + CLEAR_ALARM) = 1; // any value  (here 1)
+}
+
+//=====================================
+unsigned long timer_read(void){
+	unsigned long  rv;
+
+	rv = *((void *)TIMER_BASE + TIME_LOW);
+	rv |= (int64_t)*((void *)TIMER_BASE + TIME_HIGH) << 32;
+
+	return rv;
+}
+
+

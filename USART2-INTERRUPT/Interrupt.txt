@@ -1,0 +1,219 @@
+
+
+
+Goldfish interrupt controller:
+==============================
+Relevant files:
+$QEMU/hw/android/goldfish/interrupt.c
+$KERNEL/arch/arm/mach-goldfish/board-goldfish.c
+$KERNEL/arch/mips/goldfish/goldfish-interrupt.c
+Device properties:
+Name: goldfish_interrupt_controller
+Id: -1
+IrqCount: 0 (uses parent CPU IRQ instead).
+
+32-bit I/O registers (offset, name, abtract):
+0x00 STATUS R: Read the number of pending interrupts (0 to 32).
+0x04 NUMBER R: Read the lowest pending interrupt index, or 0 if none.
+0x08 DISABLE_ALL W: Clear all pending interrupts (does not disable them!)
+0x0c DISABLE W: Disable a given interrupt, value must be in [0..31].
+0x10 ENABLE W: Enable a given interrupt, value must be in [0..31].
+
+Goldfish provides its own interrupt controller that can manage up to 32 distinct maskable interrupt request lines. The controller itself is cascaded from a parent CPU IRQ.
+
+What this means in practice:
+- Each IRQ has a 'level' that is either 'high' (1) or 'low' (0).
+- Each IRQ also has a binary 'enable' flag.
+- Whenever (level == 1 && enabled == 1) is reached due to a state change, the controller raises its parent IRQ. This typically interrupts the CPU and forces the kernel to deal with the interrupt request.
+- Raised/Enabled interrupts that have not been serviced yet are called "pending". Raised/Disabled interrupts are called "masked" and are essentially silent until enabled.
+
+When the interrupt controller triggers the parent IRQ, the kernel should do the following:
+	num_pending = IO_READ(STATUS); // Read number of pending interrupts.
+	for (int n = 0; n < num_pending; ++n) {
+	int irq_index = IO_READ(NUMBER); // Read n-th interrupt index.
+	.. service interrupt request with the proper driver.
+	}
+
+IO_WRITE(DISABLE, <num>) or IO_WRITE(ENABLE, <num>) can change the 'enable' flag of a given IRQ. <num> must be a value in the [0..31] range. Note that enabling an IRQ which has already been raised will make it active, i.e. it will raise the parent IRQ.
+IO_WRITE(DISABLE_ALL, 0) can be used to lower all interrupt levels at once (even disabled one). Note that this constant is probably mis-named since it does not change the 'enable' flag of any IRQ.
+Note that this is the only way for the kernel to lower an IRQ level through this device. Generally speaking, Goldfish devices are responsible for lowering their own IRQ, which is performed either when a specific condition is met, or when the kernel reads from or writes to a device-specific I/O register.
+
+====================================================
+#define IO_START        0xff000000             /* Base address when MMU is off  = physical address. */
+
+#define INTERRUPT_BASE         (IO_START  + 0x00)
+#define INTERRUPT_STATUS       (0x00) /* Number of pending interrupts.  */
+#define INTERRUPT_NUMBER       (0x04)
+#define INTERRUPT_DISABLE_ALL  (0x08)
+#define INTERRUPT_DISABLE      (0x0c)
+#define INTERRUPT_ENABLE       (0x10)
+
+/* GOLDFISH IRQS  (include/asm-arm/arch-goldfish/irqs.h) */
+#define IRQ_PDEV_BUS    (1)
+#define IRQ_TIMER       (3)
+#define IRQ_TTY0		(4)
+#define IRQ_RTC			(10)
+#define IRQ_TTY1		(11)
+#define IRQ_TTY2		(12)
+#define IRQ_smc91x		(13)
+#define IRQ_FB			(14)
+#define IRQ_AUDIO		(15)
+#define IRQ_EVENTS		(16)
+#define IRQ_PIPE		(17)
+#define IRQ_SWITCH0		(18)
+#define IRQ_SWITCH1		(19)
+#define IRQ_RANDOM 		(20)
+
+
+the registers of the goldfish interrupt controller start at address 0xff000000 (IO_START + 0x00). They consist of five 32-bit registers:
+1- INTERRUPT_STATUS at offset 0x0 contains the number of pending interrupts. It is a read-only register.
+2- INTERRUPT_NUMBER at offset 0x4 contains the lowest pending, enabled interrupt number. It is a read-only register.
+3- INTERRUPT_DISABLE_ALL at offset 0x8 is a write-only register. It can be used to disable all interrupts.
+4- INTERRUPT_DISABLE at offset 0xC is a write-only register. Writing an interrupt number to it will disable the specified interrupt.
+5- INTERRUPT_ENABLE at offset 0x10 is a write-only register. Writing an interrupt number to it will enable the specified interrupt.
+
+In irqs.h, only two interrupts (IRQ_PDEV_BUS and IRQ_TIMER) are defined. There are, however, actually a number of interrupts used by the Android emulator. We can find the rest of them by reviewing the kernel debug log:
+goldfish_new_pdev goldfish_interrupt_controller at ff000000 irq -1
+goldfish_new_pdev goldfish_device_bus at ff001000 irq 1
+goldfish_new_pdev goldfish_timer at ff003000 irq 3
+goldfish_new_pdev goldfish_rtc at ff010000 irq 10
+goldfish_new_pdev goldfish_tty at ff002000 irq 4
+goldfish_new_pdev goldfish_tty at ff011000 irq 11
+goldfish_new_pdev goldfish_tty at ff012000 irq 12
+goldfish_new_pdev smc91x at ff013000 irq 13
+goldfish_new_pdev goldfish_fb at ff014000 irq 14
+goldfish_new_pdev goldfish_audio at ff004000 irq 15
+goldfish_new_pdev goldfish_mmc at ff005000 irq 16
+goldfish_new_pdev goldfish_memlog at ff006000 irq -1
+goldfish_new_pdev goldfish-battery at ff015000 irq 17
+goldfish_new_pdev goldfish_events at ff016000 irq 18
+goldfish_new_pdev goldfish_nand at ff017000 irq -1
+goldfish_new_pdev qemu_pipe at ff018000 irq 19
+goldfish_new_pdev goldfish-switch at ff01a000 irq 20
+goldfish_new_pdev goldfish-switch at ff01b000 irq 21
+
+The implementation of the interrupt controller support functions is very straightforward, We basically provide a wrapper (set/get) function to each of the interrupt controller registers.
+
+
+//Writing an interrupt number to INTERRUPT_DISABLE register it will disable the specified interrupt.
+void mask_irq(unsigned int irq){
+	*((uint32_t *)(INTERRUPT_BASE + INTERRUPT_DISABLE)) = irq;
+}
+
+//Writing an interrupt number to INTERRUPT_ENABLE register it will enable the specified interrupt.
+void unmask_irq(unsigned int irq){
+	*((uint32_t *)(INTERRUPT_BASE + INTERRUPT_ENABLE)) = irq;
+}
+
+//Writing any value other than 0 DISABLE_ALL register to it will disable all interrupts.
+void disable_all_irq(void){
+	*((uint32_t *)(INTERRUPT_BASE + INTERRUPT_DISABLE_ALL)) = 1;
+}
+
+// INTERRUPT_NUMBER register contains the lowest pending, enabled interrupt number
+int get_irq_num(void){
+	return *((uint32_t *)(INTERRUPT_BASE + INTERRUPT_NUMBER));
+}
+
+// INTERRUPT_STATUS register contains the number of pending interrupts.
+int irq_status(void){
+	return *((uint32_t *)(INTERRUPT_BASE + INTERRUPT_STATUS));
+}
+
+The function get_irq_num() returns the current pending interrupt number. This interrupt needs to be handled by the interrupt service routine (ISR). 
+
+The function irq_status() returns the number of current pending interrupts. This is the number of interrupts in the queue to be served.
+
+
+Implementation of the Interrupt Handler:
+
+.text
+.code 32
+
+.global _reset
+.global vectors_start
+.global vectors_end
+
+/* Vector table */
+vectors_start:
+    LDR PC, reset_handler_addr
+    LDR PC, undef_handler_addr
+    LDR PC, swi_handler_addr
+    LDR PC, prefetch_abort_handler_addr
+    LDR PC, data_abort_handler_addr
+    B .
+    LDR PC, irq_handler_addr
+    LDR PC, fiq_handler_addr
+
+reset_handler_addr: .word _reset
+undef_handler_addr: .word _undef
+swi_handler_addr: .word _swi
+prefetch_abort_handler_addr: .word _pAbort
+data_abort_handler_addr: .word _dAbort
+irq_handler_addr: .word _irq
+fiq_handler_addr: .word _fiq
+vectors_end:
+
+_reset:
+    /* set Supervisor stack */
+    LDR     r0,= _reset      /* Pass the reset address as the 1st argument */
+    LDR     r1,= _start_asm  /* Pass the return address as the 2nd argument */
+    MOV     lr,r1                /* Set the return address after the remap */
+    LDR sp, = _stack
+
+    /* Copy vector table */
+    LDR     r0,=0
+    LDR     r1,=vectors_start
+    LDR     r2,=vectors_end
+1:
+    CMP     r1,r2
+    LDMLTIA r1!,{r3}
+    STMLTIA r0!,{r3}
+    BLT     1b
+
+    /* Get program status register */
+    MRS r0, cpsr
+
+    /* Go in IRQ mode */
+    BIC r1, r0, #0x1F
+		ORR r1, r1, #0x12
+    MSR cpsr, r1
+
+    /* Set IRQ stack */
+    LDR sp, =__irq_stack
+
+    /* Enable IRQs */
+    BIC r0, r0, #0x80
+
+    /* Go back in Supervisor mode */
+    MSR cpsr, r0
+
+    /* You can add peripherals and memory initialization here on a physical board */
+    LDR r0, =_start
+    BX  r0
+
+_start:
+    /* Call C startup function  main() */
+    LDR r0, = _main
+    BX  r0
+    .end
+
+The symbols _stack and __irq_stack are the stack bases for Supervisor mode and interrupt request mode, respectively. Since we will handle interrupts on our own, we also need to copy the vector table (vectors_start/vectors_end) to the memory address zero to initialize all exception vectors. Then we transfer control to the function main().
+
+void vectors_init(void) {
+
+    /* hook the exception handlers */
+    *(uint32_t volatile *)0x24 = (uint32_t)&_undef;
+    *(uint32_t volatile *)0x28 = (uint32_t)&_swi;
+    *(uint32_t volatile *)0x2C = (uint32_t)&_pAbort;
+    *(uint32_t volatile *)0x30 = (uint32_t)&_dAbort;
+    *(uint32_t volatile *)0x34 = (uint32_t)&_reserved;
+    *(uint32_t volatile *)0x38 = (uint32_t)&_irq;
+    *(uint32_t volatile *)0x3C = (uint32_t)&_fiq;
+
+}
+
+
+
+
+
