@@ -5,6 +5,18 @@ Bare metal programming (No operating system, embedded or low level embedded or d
 
 In this repo I'll share my experiments while playing with goldfish and GNU ARM tools.
 
+DONE:
+- VIDEO framebuffer
+- USART
+- INTERRUPT
+
+TO DO:
+- Touch screen
+- Nand flach access
+- SD card access
+- Sensors
+- ... etc etc
+
 ============================================================================
 
 Resources:
