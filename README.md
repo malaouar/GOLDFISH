@@ -5,9 +5,9 @@ Bare metal programming (No operating system, embedded or low level embedded or d
 
 In this repo I'll share my experiments while playing with goldfish and GNU ARM tools.
 
-=============================================================================
+============================================================================
 
-resources:
+Resources:
 * Embedded Programming with Android: Bringing Up an Android System from Scratch  by Roger Ye
 
 An EXCELLENT book, buy it NOW!
