@@ -1,0 +1,81 @@
+
+To do bare metal programming, you need a basic knowledge of electronics, digital electronics, microprocessors, microcontrollers, and both assembly and C languages.
+Bare metal programming is done in C and assembly language, because both can be used with no, or at least minimal runtime library support.
+
+  learning bare metal programming using the GNU toolchain on top of a virtual hardware instead of a real hardware board can be very valuable. With this approach, both time and space limitations can be dramatically reduced.
+
+The Android emulator was developed by Google to allow Android application developers to test Android applications without relying on real hardware. This emulator is built on top of QEMU. Google customized a few things based on a specific version of QEMU. The major changes include virtual hardware (goldfish) support and the addition of a layer that supports Android Virtual Device Manager.
+ The goldfish board is a pure virtual hardware defined by Google. Although there is not a formal hardware specification for the goldfish, we can explore its details by investigating the goldfish kernel code to find the necessary information.
+
+goldfish kernel source code:
+  https://github.com/derekzhuo/android-goldfish-2.6.29
+
+ Most of goldfish-specific hardware interfaces are defined in the Linux kernel source code, found at arch/arm/mach-goldfish/include/mach/hardware.h.
+
+In the emulator source code there is also a very usefull documentation.
+
+the Android emulator is suitable as the basis for developing Android applications or for learning programming
+The good news with emulators is that you do not need to worry about damaging the hardware if you make mistakes. You can also do source code-level debugging without any difficulties. However, there are still some differences between the virtualized platform and the real hardware.
+
+ The Android emulator offers very helpful display support, keyboard, and power management simulation capabilities. 
+
+The ARM processor that the Android emulator emulates is ARM926EJ-S, which is the entry-point processor capable of supporting a full operating system.
+The Android emulator supports many hardware features likely to be found on mobile devices, including the following:
+ An ARMv5 CPU and the corresponding memory-management unit (MMU)
+ A 16-bit LCD display
+ One or more keyboards (a qwerty-based keyboard and associated phone buttons)
+ A sound chip with output and input capabilities
+ Flash memory partitions (emulated through disk image files on the development machine)
+ A GSM modem, including a simulated SIM card
+ A camera, using a webcam connected to your development computer
+ Sensors like an accelerometer, using data from a USB-connected Android device
+
+To use the emulator, we must first create an Android Virtual Device (AVD). An AVD is a configuration, in which we specify the set of hardware options and emulator skin we want to use and an Android platform to run: 
+- The hardware configuration specifies the processor architecture, such as x86 or ARM, as well as peripherals such as memory, screen size, or a camera. 
+- The software configuration specifies the Android version (including kernel, ramdisk image, system image, user data image).
+
+When we launch the emulator, we specify the AVD configuration that we want to load.
+
+we use a Linux environment as our host. First, we need to install the GNU toolchain for ARM development and the Android SDK. 
+The version of the Android SDK I'm using is android 4.4 (API 20). U can try other version, install it and add the "tools" folder to the path. 
+I'm using the free ARM toolchain called Sourcery CodeBench Lite from Mentor Graphics (2013.11-24), u can use other ARM toolchain for Linux, install it and add the "bin" folder to the path. 
+A few different toolchain formats for ARM are available:
+ - Toolchain for ARM EABI/ELF: Intended for real-time operating systems or bare metal systems where no operating system is present.
+ - Toolchain for GNU/Linux: Intended for systems running Linux. This kind of toolchain can be used to build both   Linux applications and bare metal programs using freestanding options.
+ The toolchain for ARM EABI/ELF, is usually compiled with a small C library, such as uClibc or NEWLIB.
+
+We can write ARM assembly language or C programs, compile those programs using the GNU toolchain, and execute them in the Android emulator.
+
+The Android emulator, support the gdb interface. This is a good way to monitor the running program. We can connect to the emulator through gdb and then perform step-by-step debugging. To have a better user interface, ddd can be used together with gdb. we can install ddd on Ubuntu:
+
+	$ sudo apt-get install ddd
+	
+Start by creating an AVD using GUI app from SDK or using the command line, mine is named AVD22.
+There are tones of tutorials on the web about how to install SDK, create AVD or installing GNU ARM toolchains.
+
+
+ The goldfish board uses Memory-mapped input/output peripherals, all hardware interfaces share a common physical base address: 0xff000000.
+
+peripheral              address    IRQ Nr
+-----------------------------------------
+interrupt_controller    ff000000    -1
+device_bus              ff001000     1
+timer                   ff003000     3
+rtc                     ff010000     10
+tty1                    ff002000     4
+tty2                    ff011000     11
+tty3                    ff012000     12
+smc91x                  ff013000     13
+framebuffer             ff014000     14
+audio                   ff004000     15
+mmc                     ff005000     16
+memlog                  ff006000    -1
+battery                 ff015000     17
+events                  ff016000     18
+nand                    ff017000    -1
+pipe                    ff018000     19
+switch0                 ff01a000     20
+switch1                 ff01b000     21
+
+
+
