@@ -79,3 +79,25 @@ switch1                 ff01b000     21
 
 
 
+
+TIPS:
+
+if the emulator window is too big to fit in the screen, in the launch window check the option "scale display to real size" and choose a screen size (diagonal in inchs = 7) and optionaly the resolution needed (dpi).
+
+To rotate the Android Emulator, just disable the Num Lock key and and use the 7 and the 9 in the num pad to rotate the emulator and change its layout from portrait to landscape.
+OR:
+Press CTRL + F12
+
+If the window for the emulator  is locked to the very top of the screen with no close, resize, or minimize buttons being shown. Click on emulator, then press Alt+Space, then choose Move, then move with arrow keys
+
+Keyboard Shortcuts:
+If you enabled keyboard support when you created your AVD, a variety of keys will be mapped between your computer keyboard and the emulator. 
+
+  Key               Effect
+ Home                Android Home
+ F2                  Menu
+ Esc                 Back
+ Ctrl-F11            Rotate landscape/portrait
+ Keypad 4/6/5/8/2 D-Pad: left/right/center/up/down
+ Ctrl-F8            Toggle Cell Network On/Off
+
