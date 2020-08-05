@@ -17,6 +17,10 @@ TO DO:
 - Sensors
 - ... etc etc
 
+PLEASE: if you have any information on this subject drop me a word, I'll be very gratefull.
+
+  malaoaur67@gmail.com
+  
 ============================================================================
 
 Resources:
