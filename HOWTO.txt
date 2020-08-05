@@ -51,7 +51,7 @@ The Android emulator, support the gdb interface. This is a good way to monitor t
 	$ sudo apt-get install ddd
 	
 Start by creating an AVD using GUI app from SDK or using the command line, mine is named AVD22.
-There are tones of tutorials on the web about how to install SDK, create AVD or installing GNU ARM toolchains.
+There are tons of tutorials on the web about how to install SDK, create AVD or installing GNU ARM toolchains.
 
 
  The goldfish board uses Memory-mapped input/output peripherals, all hardware interfaces share a common physical base address: 0xff000000.
